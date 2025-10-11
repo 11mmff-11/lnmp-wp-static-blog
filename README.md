@@ -1,0 +1,2 @@
+# lnmp-wp-static-blog
+
