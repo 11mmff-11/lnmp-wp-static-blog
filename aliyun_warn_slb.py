@@ -1,9 +1,9 @@
-import os
+import os #引入操作环境变量的库
 import json
 import time
 import logging
 import requests
-from dotenv import load_dotenv
+from dotenv import load_dotenv #引入操作环境变量的库
 from aliyunsdkcore.client import AcsClient
 from aliyunsdkcore.request import CommonRequest
 
@@ -12,56 +12,56 @@ CONFIG = {
     "aliyun_slb_id": "lb-2zea5bvtsr4a0gtnmutr2",
     "master_ecs_id": "i-2ze7cd5ij7o5qaznr2tk",
     "backup_ecs_id": "i-2ze6iosf5v5rpnzly9ls",
-    "aliyun_slb_ip": "39.167.95.191",
-    "master_ecs_ip": "172.16.15.4",
-    "check_url": "http://172.16.15.4/health.html",
-    "retry_times": 3,
-    "retry_interval": 2,
-    "normal_master_weight": 90,
-    "normal_backup_weight": 10,
-    "fault_master_weight": 0,
-    "fault_backup_weight": 100,
-    "log_file": "/root/slb_switch.log",
-    "region_id": "cn-beijing"
+    "aliyun_slb_ip": "39.167.95.191", 
+    "master_ecs_ip": "172.16.15.4", #主ecs内网ip，用于ping检测
+    "check_url": "http://172.16.15.4/health.html", #前提条件是在wordpress根目录创建一个health.html文件。
+    "retry_times": 3, #健康检测重试次数
+    "retry_interval": 2, #重试间隔
+    "normal_master_weight": 90, #主ecs权重
+    "normal_backup_weight": 10, #备ecs权重
+    "fault_master_weight": 0, #主ecs故障后权重
+    "fault_backup_weight": 100, #备ecs故障后权重
+    "log_file": "/root/slb_switch.log", #日志文件
+    "region_id": "cn-beijing" #api接口地址
 }
 
-def init_logger():
+def init_logger(): #定义函数创建日志
     """初始化日志配置"""
     # 创建日志目录
     log_dir = os.path.dirname(CONFIG["log_file"])
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    
-    logger = logging.getLogger("slb_switch")
-    logger.setLevel(logging.INFO)
-    
-    file_handler = logging.FileHandler(CONFIG["log_file"])
+    #创建日志器 日志器：是日志系统的入口，负责接受日志信息并传递给处理器
+    logger = logging.getLogger("slb_switch")  #调用方法，创建一个名为slb_switch的日志器
+    logger.setLevel(logging.INFO) #设置日志器的级别
+    #创建文件处理器
+    file_handler = logging.FileHandler(CONFIG["log_file"]) 
     file_handler.setLevel(logging.INFO)
-    
+    #创建格式器
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
-    
+    #添加文件处理器到日志器中
     logger.addHandler(file_handler)
     return logger
 
 def init_aliyun_client(logger):
     """初始化阿里云客户端"""
     try:
-        load_dotenv("aliyun_env")
+        load_dotenv("aliyun_env") #读取这个文件中的环境变量
         logger.info("成功加载阿里云环境变量文件")
     except Exception as e:
         logger.error(f"加载环境变量文件失败: {str(e)}")
         return None
     
     try:
-        access_key_id = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
+        access_key_id = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID") #获取这个变量的值
         access_key_secret = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
         
         if not all([access_key_id, access_key_secret]):
             logger.error("环境变量配置不完整")
             return None
             
-        client = AcsClient(access_key_id, access_key_secret, CONFIG["region_id"])
+        client = AcsClient(access_key_id, access_key_secret, CONFIG["region_id"]) #初始化客户端
         logger.info("阿里云客户端初始化成功")
         return client
     except Exception as e:
@@ -70,7 +70,7 @@ def init_aliyun_client(logger):
 
 def check_master_health(logger):
     """检查主ECS健康状态"""
-    # Ping检查
+    # Ping检查，检测主机ecs是否正常运行
     ping_result = os.system(f"ping -c 2 -w 3 {CONFIG['master_ecs_ip']} > /dev/null 2>&1")
     if ping_result != 0:
         logger.error(f"主ECS {CONFIG['master_ecs_ip']} ping不通")
@@ -79,7 +79,7 @@ def check_master_health(logger):
     # HTTP健康检查
     for i in range(1, CONFIG["retry_times"] + 1):
         try:
-            response = requests.get(CONFIG["check_url"], timeout=5)
+            response = requests.get(CONFIG["check_url"], timeout=5) #通过访问health.html文件，检验返回值，来确定主ecs是否正常
             if response.status_code == 200:
                 logger.info(f"主ECS健康检查通过，第{i}次检查成功")
                 return True
@@ -94,9 +94,10 @@ def check_master_health(logger):
     logger.error("主ECS健康检查连续失败")
     return False
 
-def get_current_weights(client, logger):
+def get_current_weights(client, logger): 
     """获取当前权重"""
     try:
+        #首先初始化客户端，然后调用各种方法，设置需要的值，然后就可以定位需要查询的那个ecs，之后获取权重
         request = CommonRequest()
         request.set_domain(f"slb.{CONFIG['region_id']}.aliyuncs.com")
         request.set_version("2014-05-15")
@@ -111,7 +112,7 @@ def get_current_weights(client, logger):
         master_weight = None
         backup_weight = None
         
-        backend_servers = response_json.get("BackendServers", {}).get("BackendServer", [])
+        backend_servers = response_json.get("BackendServers", {}).get("BackendServer", []) #返回了json格式的数据，是一个字典一个列表嵌套的格式
         for server in backend_servers:
             if server["ServerId"] == CONFIG["master_ecs_id"]:
                 master_weight = server["Weight"]
